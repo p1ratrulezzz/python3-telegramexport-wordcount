@@ -39,7 +39,7 @@ def word_frequency(sentence):
                                                                                               ascending=False)
     return word_freq, word_pairs, trigrams
 
-cwd = os.path.dirname(__file__)
+cwd = os.path.dirname(os.path.realpath(__file__))
 fp = open(cwd  + '/resources/result.json')
 data = json.load(fp)
 fp.close()
