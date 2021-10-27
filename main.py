@@ -1,13 +1,5 @@
 # loading in all the essentials for data manipulation
 import pandas as pd
-import numpy as np
-# load inthe NTLK stopwords to remove articles, preposition and other words that are not actionable
-from nltk.corpus import stopwords
-# This allows to create individual objects from a bog of words
-from nltk.tokenize import word_tokenize
-# Lemmatizer helps to reduce words to the base form
-from nltk.stem import WordNetLemmatizer
-# Ngrams allows to group words in common pairs or trigrams..etc
 from nltk import ngrams
 # We can use counter to count the objects
 from collections import Counter
@@ -16,17 +8,52 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import json
 import os
-import pathlib
 import matplotlib.figure
+import spacy
+from spacy.tokens.token import Token
+from progress.bar import Bar
+from threading import Thread
+from time import sleep
+import sys
 
-def word_frequency(sentence):
-    # creates tokens, creates lower class, removes numbers and lemmatizes the words
-    new_tokens = word_tokenize(sentence)
-    new_tokens = [t.lower() for t in new_tokens]
-    # new_tokens = [t for t in new_tokens if t not in stopwords.words('russian')]
-    new_tokens = [t for t in new_tokens if (t.isalpha() and len(t) >= 4)]
-    lemmatizer = WordNetLemmatizer()
-    new_tokens = [lemmatizer.lemmatize(t) for t in new_tokens]
+class ProgressBarThread(Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs=None, *, daemon=None):
+        super(ProgressBarThread, self).__init__(group=None, target=None, name=None,
+                                                args=(), kwargs=kwargs, daemon=None)
+        self._ctx = args[0]
+        self._progress = Bar('Processing', max=self._ctx["max"])
+    def run(self) -> None:
+        self._progress.start()
+        previous_i = self._ctx["i"]
+        while (self._ctx["i"] <= self._ctx["max"]):
+            delta = self._ctx["i"] - previous_i
+            previous_i = self._ctx["i"]
+            if delta > 0:
+                self._progress.next(delta)
+            sleep(1)
+
+        self._progress.finish()
+
+def word_frequency(messages):
+    ctx = {
+        "i": 0,
+        "max": len(messages)
+    }
+    progressthread = ProgressBarThread(args=[ctx])
+    progressthread.start()
+    sp = spacy.load('ru_core_news_lg')
+    new_tokens = []
+    for message in messages:
+        if (type(message["text"]) == str and len(message["text"]) > 0):
+            sentence = sp(message["text"])
+            word: spacy.tokens.token.Token
+            for word in sentence:
+                if (word.is_alpha and len(word.lemma_) > 3):
+                    new_tokens.append(word.lemma_)
+        ctx["i"] += 1
+    progressthread.join()
+
     # counts the words, pairs and trigrams
     counted = Counter(new_tokens)
     counted_2 = Counter(ngrams(new_tokens, 2))
@@ -39,23 +66,17 @@ def word_frequency(sentence):
                                                                                               ascending=False)
     return word_freq, word_pairs, trigrams
 
-cwd = os.path.dirname(__file__)
+cwd = os.path.dirname(os.path.realpath(__file__))
 fp = open(cwd  + '/resources/result.json')
 data = json.load(fp)
 fp.close()
 
-sentences = ""
-for message in data["messages"]:
-    if (type(message["text"]) == str and len(message["text"]) > 0):
-        sentences += message["text"] + " "
-
-(data2, data3, data4) = word_frequency(sentences)
-a = 1
+(data2, data3, data4) = word_frequency(data["messages"])
 # # create subplot of the different data frames
 fig: matplotlib.figure.Figure
-fig, axes = plt.subplots(2,1,figsize=(20,40))
+fig, axes = plt.subplots(3,1,figsize=(40,40))
 sns.barplot(ax=axes[0],x='frequency',y='word',data=data2.head(100))
 sns.barplot(ax=axes[1],x='frequency',y='pairs',data=data3.head(50))
-#sns.barplot(ax=axes[2],x='frequency',y='trigrams',data=data4.head(30))
+sns.barplot(ax=axes[2],x='frequency',y='trigrams',data=data4.head(30))
 
 fig.savefig(cwd + '/resources/fig.jpg')
